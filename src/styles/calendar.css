@@ -1,0 +1,62 @@
+.week {
+    aspect-ratio: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: var(--orca-fontsize-xs);
+    width: 25px;
+    position: relative;
+}
+
+.orca-calendar .value {
+    color: var(--aurora-dark-text);
+    color: var(--orca-color-text-1);
+}
+
+@scope (.orca-calendar) {
+    .week:not(.value):hover {
+        font-weight: var(--orca-fontweight-lg);
+    }
+}
+
+.orca-calendar .week:not(.value):hover,
+.orca-calendar .month:not(.value):hover,
+.orca-calendar .year:not(.value):hover {
+    color: var(--aurora-light-text);
+    background: var(--orca-color-gray-4);
+}
+
+@media (prefers-color-scheme: dark) {
+    .orca-calendar .week:not(.value):hover,
+    .orca-calendar .month:not(.value):hover,
+    .orca-calendar .year:not(.value):hover {
+        color: var(--aurora-dark-text);
+        background: var(--orca-color-gray-4);
+    }
+}
+
+/* Journal dot indicator for weeks that have corresponding weekly note blocks */
+.orca-calendar .week .journal-dot {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--orca-color-primary);
+    opacity: 0.8;
+}
+
+.orca-calendar .week .journal-dot:hover {
+    opacity: 1;
+    transform: scale(1.2);
+}
+
+@media (prefers-color-scheme: dark) {
+    .orca-calendar .week .journal-dot {
+        background: var(--orca-color-primary-light);
+    }
+}
+
