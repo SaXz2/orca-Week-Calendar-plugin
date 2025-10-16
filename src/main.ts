@@ -17,6 +17,8 @@ let lastFocusedBlockId: string | null = null;
 let weeksWithJournalDots: Set<string> = new Set();
 let lastCheckedYear: string = '';
 let lastCheckedMonth: string = '';
+// Cache recently created week blocks: aliasName -> blockId
+let recentlyCreatedWeeks: Map<string, DbId> = new Map();
 
 export async function load(_name: string) {
   pluginName = _name;
@@ -46,6 +48,9 @@ export async function unload() {
     clearInterval(calendarCheckInterval);
     calendarCheckInterval = null;
   }
+
+  // Clear cache
+  recentlyCreatedWeeks.clear();
 
   // Remove CSS styles
   orca.themes.removeCSSResources(`${pluginName}-styles`);
@@ -337,20 +342,42 @@ async function updateJournalDots() {
     const currentMonth = getMonthFromCalendar();
     const aliasName = `${weekNumber}周 · ${currentYear}年${currentMonth}月`;
     
-    try {
-      // Check if a block with this alias exists
-      const block = await orca.invokeBackend("get-block-by-alias", aliasName);
-      if (block && block.id) {
-        // Add journal dot
-        const dot = document.createElement("div");
-        dot.className = "journal-dot";
-        weekElement.appendChild(dot);
-        
-        // Track this week as having a journal dot
-        weeksWithJournalDots.add(weekNumber);
+    let blockExists = false;
+    
+    // First check local cache for recently created blocks
+    if (recentlyCreatedWeeks.has(aliasName)) {
+      const blockId = recentlyCreatedWeeks.get(aliasName);
+      // Verify the block still exists in state
+      if (blockId && orca.state.blocks[blockId]) {
+        blockExists = true;
+      } else {
+        // Block not in state anymore, remove from cache
+        recentlyCreatedWeeks.delete(aliasName);
       }
-    } catch (error) {
-      console.warn(`${pluginName}: Error checking block for alias ${aliasName}:`, error);
+    }
+    
+    // If not in cache, check backend
+    if (!blockExists) {
+      try {
+        const block = await orca.invokeBackend("get-block-by-alias", aliasName);
+        if (block && block.id) {
+          blockExists = true;
+          // Add to cache for future reference
+          recentlyCreatedWeeks.set(aliasName, block.id);
+        }
+      } catch (error) {
+        // Ignore errors, block doesn't exist
+      }
+    }
+    
+    // Add journal dot if block exists
+    if (blockExists) {
+      const dot = document.createElement("div");
+      dot.className = "journal-dot";
+      weekElement.appendChild(dot);
+      
+      // Track this week as having a journal dot
+      weeksWithJournalDots.add(weekNumber);
     }
   }
 }
@@ -448,14 +475,14 @@ async function createOrOpenWeekPage(year: string, week: string) {
  */
 async function createWeekPage(aliasName: string): Promise<DbId | null> {
   try {
-    // Create a top-level block (parent: null means root level)
-    // Create empty content initially
+    // Create a top-level block with NULL content
+    // For alias blocks: content should be NULL, text will be set by createAlias
     const newBlockId = await orca.commands.invokeEditorCommand(
       "core.editor.insertBlock",
       null, // cursor
       null, // refBlock (null for root level)
       null, // position
-      [{ t: "t", v: "" }], // empty content
+      null, // NULL content for alias block
       { type: "text" } // repr
     );
 
@@ -464,6 +491,7 @@ async function createWeekPage(aliasName: string): Promise<DbId | null> {
     }
 
     // Create alias for the block
+    // This should automatically set text field to aliasName
     const aliasError = await orca.commands.invokeEditorCommand(
       "core.editor.createAlias",
       null,
@@ -473,6 +501,7 @@ async function createWeekPage(aliasName: string): Promise<DbId | null> {
 
     if (aliasError) {
       console.error(`${pluginName}: Error creating alias:`, aliasError);
+      orca.notify("warn", t("createAliasWarning"));
       // Continue anyway, the block is created
     }
 
@@ -484,6 +513,24 @@ async function createWeekPage(aliasName: string): Promise<DbId | null> {
       newBlockId,
       tagName
     );
+
+    // Fetch the complete block from backend to ensure it's fully created
+    try {
+      const createdBlock = await orca.invokeBackend("get-block", newBlockId);
+      if (createdBlock) {
+        // Manually update orca.state.blocks to ensure immediate availability
+        orca.state.blocks[newBlockId] = createdBlock;
+        
+        // Add to local cache for immediate journal dot updates
+        recentlyCreatedWeeks.set(aliasName, newBlockId);
+        
+        console.log(`${pluginName}: Successfully created week page:`, aliasName, newBlockId);
+      }
+    } catch (fetchError) {
+      console.warn(`${pluginName}: Could not fetch created block:`, fetchError);
+      // Still cache the blockId even if we can't fetch it
+      recentlyCreatedWeeks.set(aliasName, newBlockId);
+    }
 
     return newBlockId;
   } catch (error) {
